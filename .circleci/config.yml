@@ -21,6 +21,7 @@ jobs:
             python -m venv venv
             . venv/bin/activate
             pip install --upgrade pip
+            pip install 'setuptools<58.0.0'
             pip install -r requirements.txt
       - save_cache:
           paths:
