@@ -1,82 +1,63 @@
 version: 2.1
-
-#########
-# Common
-#########
 orbs:
-  heroku: circleci/heroku@1.0.1
-
-############
-# Workflows
-############
+  heroku: circleci/heroku@2.0.0
+executors:
+  python-executor:
+    docker:
+      - image: cimg/python:3.10.13
+    working_directory: ~/repo
+jobs:
+  test:
+    executor: python-executor
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - v1-pip-cache-{{ checksum "requirements.txt" }}
+            - v1-pip-cache-
+      - run:
+          name: Install dependencies
+          command: |
+            python -m venv venv
+            . venv/bin/activate
+            pip install --upgrade pip
+            pip install -r requirements.txt
+      - save_cache:
+          paths:
+            - ~/.cache/pip
+          key: v1-pip-cache-{{ checksum "requirements.txt" }}
+      - run:
+          name: Download Selenium Standalone Server
+          command: |
+            mkdir -p selenium
+            wget -O selenium/selenium-server-standalone.jar https://selenium-release.storage.googleapis.com/3.141/selenium-server-standalone-3.141.59.jar
+      - run:
+          name: Run tests
+          command: |
+            . venv/bin/activate
+            pytest
+      - store_artifacts:
+          path: test-results
+          destination: test-results
+  deploy:
+    executor: python-executor
+    steps:
+      - checkout
+      - run:
+          name: Install dependencies
+          command: |
+            python -m venv venv
+            . venv/bin/activate
+            pip install --upgrade pip
+            pip install -r requirements.txt
+      - heroku/deploy-via-git:
+          app-name: YOUR_HEROKU_APP_NAME
 workflows:
   version: 2
-  build-deploy:
+  test_and_deploy:
     jobs:
-      - build
+      - test
       - deploy:
           requires:
-            - build
-          filters:
-            branches:
-              only: master
-
-##################
-# Job Definitions
-##################
-jobs:
-  build:
-    docker:
-      - image: circleci/python:3.6.2-stretch-browsers
-        environment:
-          FLASK_CONFIG: testing
-          TEST_DATABASE_URL: postgresql://ubuntu@localhost/circle_test?sslmode=disable
-      - image: circleci/postgres:9.6.5-alpine-ram
-        environment:
-          POSTGRES_USER: ubuntu
-          POSTGRES_DB: circle_test
-          POSTGRES_PASSWORD: ''
-    steps:
-      - checkout
-      - run: mkdir test-reports
-      - run:
-          name: Download Selenium
-          command: |
-            curl -O http://selenium-release.storage.googleapis.com/3.5/selenium-server-standalone-3.5.3.jar
-      - run:
-          name: Start Selenium
-          command: |
-            java -jar selenium-server-standalone-3.5.3.jar -log test-reports/selenium.log
-          background: true
-      - restore_cache:
-          key: deps2-{{ checksum "requirements/dev.txt" }}
-      - run:
-          command: |
-            python3 -m venv venv
-            . venv/bin/activate
-            pip install -r requirements/dev.txt
-      - save_cache:
-          key: deps2-{{ checksum "requirements/dev.txt" }}
-          paths:
-            - 'venv'
-      - run:
-          command: |
-            . venv/bin/activate
-            python manage.py test
-      - store_artifacts:
-          path: test-reports/
-          destination: tr1
-      - store_test_results:
-          path: test-reports/
-
-  deploy:
-    executor: heroku/default
-    steps:
-      - checkout
-      - add_ssh_keys:
-          fingerprints:
-            - '48:a0:87:54:ca:75:32:12:c6:9e:a2:77:a4:7a:08:a4'
-      - heroku/install
-      - heroku/deploy-via-git:
-          force: true
-
+            - test
+          context: heroku
